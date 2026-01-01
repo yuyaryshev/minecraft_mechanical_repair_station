@@ -38,15 +38,16 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
 
     public static final String TAG_UPGRADE_LEVEL = "RepairStationUpgradeLevel";
     public static final String TAG_BASE_MAX_DAMAGE = "RepairStationBaseMaxDamage";
-    public static final int INVENTORY_SIZE = 11;
+    public static final int INVENTORY_SIZE = 12;
     public static final int TARGET_SLOT = 0;
     public static final int MATERIAL_SLOT_START = 1;
     public static final int MATERIAL_SLOT_END = 10;
+    public static final int OUTPUT_SLOT = 11;
     private static final int ROTATIONS_PER_DURABILITY = 1;
     private static final int MANA_SEARCH_RADIUS = 3;
     private static final int MAX_FE_EXTRACT_PER_TICK = 1000;
 
-    private final ItemStackHandler inventory;
+    private ItemStackHandler inventory;
     private LazyOptional<IItemHandler> itemHandler;
 
     private float rotationBuffer;
@@ -58,13 +59,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         rotationBuffer = 0f;
         feBuffer = 0;
         manaBuffer = 0;
-        inventory = new ItemStackHandler(INVENTORY_SIZE) {
-            @Override
-            protected void onContentsChanged(int slot) {
-                setChanged();
-                sendData();
-            }
-        };
+        inventory = createHandler(INVENTORY_SIZE);
         itemHandler = LazyOptional.of(() -> inventory);
     }
 
@@ -354,6 +349,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         manaBuffer = compound.getInt("ManaBuffer");
         if (compound.contains("Inventory"))
             inventory.deserializeNBT(compound.getCompound("Inventory"));
+        resizeInventoryIfNeeded();
         rotationBuffer = Math.min(rotationBuffer, maxRotations());
         feBuffer = Math.min(feBuffer, maxFeBuffer());
         manaBuffer = Math.min(manaBuffer, maxManaBuffer());
@@ -422,6 +418,29 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     @Override
     public void reviveCaps() {
         super.reviveCaps();
+        itemHandler = LazyOptional.of(() -> inventory);
+    }
+
+    private ItemStackHandler createHandler(int size) {
+        return new ItemStackHandler(size) {
+            @Override
+            protected void onContentsChanged(int slot) {
+                setChanged();
+                sendData();
+            }
+        };
+    }
+
+    private void resizeInventoryIfNeeded() {
+        if (inventory.getSlots() >= INVENTORY_SIZE)
+            return;
+        ItemStackHandler resized = createHandler(INVENTORY_SIZE);
+        for (int slot = 0; slot < inventory.getSlots(); slot++) {
+            resized.setStackInSlot(slot, inventory.getStackInSlot(slot));
+        }
+        inventory = resized;
+        if (itemHandler != null)
+            itemHandler.invalidate();
         itemHandler = LazyOptional.of(() -> inventory);
     }
 }

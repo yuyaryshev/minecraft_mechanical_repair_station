@@ -38,15 +38,15 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
                 ? station.getInventory()
                 : new ItemStackHandler(MechanicalRepairStationBlockEntity.INVENTORY_SIZE);
 
-        addSlot(new SlotItemHandler(handler, MechanicalRepairStationBlockEntity.TARGET_SLOT, 26, 20) {
+        addSlot(new SlotItemHandler(handler, MechanicalRepairStationBlockEntity.TARGET_SLOT, 43, 17) {
             @Override
             public boolean mayPlace(ItemStack stack) {
                 return stack.isDamageableItem();
             }
         });
 
-        int startX = 62;
-        int startY = 18;
+        int startX = 43;
+        int startY = 47;
         int slot = MechanicalRepairStationBlockEntity.MATERIAL_SLOT_START;
         int maxSlot = Math.min(MechanicalRepairStationBlockEntity.MATERIAL_SLOT_END, handler.getSlots() - 1);
         int maxMaterialSlots = Math.max(0, maxSlot - slot + 1);
@@ -56,14 +56,25 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
             addSlot(new SlotItemHandler(handler, slot++, startX + col * 18, startY + row * 18));
         }
 
+        if (handler.getSlots() > MechanicalRepairStationBlockEntity.OUTPUT_SLOT) {
+            addSlot(new SlotItemHandler(handler, MechanicalRepairStationBlockEntity.OUTPUT_SLOT, 115, 16) {
+                @Override
+                public boolean mayPlace(ItemStack stack) {
+                    return false;
+                }
+            });
+        }
+
+        int playerInvY = 84;
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
-                addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, 84 + row * 18));
+                addSlot(new Slot(inventory, col + row * 9 + 9, 8 + col * 18, playerInvY + row * 18));
             }
         }
 
+        int hotbarY = 142;
         for (int col = 0; col < 9; col++) {
-            addSlot(new Slot(inventory, col, 8 + col * 18, 142));
+            addSlot(new Slot(inventory, col, 8 + col * 18, hotbarY));
         }
 
         addDataSlot(new DataSlot() {
