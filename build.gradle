@@ -92,8 +92,6 @@ sourceSets {
         }
         resources {
             setSrcDirs(['src/repair_station_mod/resources', 'src/generated/resources'])
-            exclude 'yy_mechanical_workbench.*'
-            exclude 'assets/yy_mechanical_workbench/**'
         }
     }
 }
