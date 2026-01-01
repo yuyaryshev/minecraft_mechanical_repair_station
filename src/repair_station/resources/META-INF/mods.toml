@@ -1,0 +1,38 @@
+modLoader="javafml"
+loaderVersion="[43,)"
+license="The MIT License (MIT)"
+issueTrackerURL="https://example.com/issues"
+
+[[mods]]
+modId="yy_mechanical_workbench"
+version="${file.jarVersion}"
+displayName="Mechanical Workbench"
+displayURL="https://example.com"
+logoFile="yy_mechanical_workbench.png"
+#credits=""
+authors="yymod"
+description='''
+Mechanical Workbench is a Create Mod addon by yymod that adds a powered crafting workbench.
+'''
+
+[[dependencies.yy_mechanical_workbench]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47.0.0,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.yy_mechanical_workbench]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20,1.21)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.yy_mechanical_workbench]]
+    modId="create"
+    mandatory=true
+    versionRange="[6.0.4,6.1.0)"
+    ordering="NONE"
+    side="BOTH"
+

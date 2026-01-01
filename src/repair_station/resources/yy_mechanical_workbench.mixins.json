@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.yymod.mechanicalworkbench.mixins",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "yy_mechanical_workbench.refmap.json",
+  "mixins": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

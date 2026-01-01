@@ -1,0 +1,20 @@
+{
+  "variants": {
+    "facing=east": {
+      "model": "yy_mechanical_workbench:block/mechanical_workbench/block",
+      "y": 270
+    },
+    "facing=north": {
+      "model": "yy_mechanical_workbench:block/mechanical_workbench/block",
+      "y": 180
+    },
+    "facing=south": {
+      "model": "yy_mechanical_workbench:block/mechanical_workbench/block"
+    },
+    "facing=west": {
+      "model": "yy_mechanical_workbench:block/mechanical_workbench/block",
+      "y": 90
+    }
+  }
+}
+
