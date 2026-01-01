@@ -62,6 +62,13 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
                 public boolean mayPlace(ItemStack stack) {
                     return false;
                 }
+
+                @Override
+                public void onTake(Player player, ItemStack stack) {
+                    super.onTake(player, stack);
+                    if (station != null && !player.level().isClientSide)
+                        station.handleRepairAndExtract(player);
+                }
             });
         }
 
@@ -148,7 +155,7 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
         if (player.level().isClientSide)
             return true;
         if (id == 0)
-            return station.handleRepair(player);
+            return true;
         if (id == 1)
             return station.handleUpgrade(player);
         return super.clickMenuButton(player, id);

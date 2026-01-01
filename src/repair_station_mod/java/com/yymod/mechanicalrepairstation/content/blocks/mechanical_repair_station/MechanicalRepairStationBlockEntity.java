@@ -53,6 +53,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     private float rotationBuffer;
     private int feBuffer;
     private int manaBuffer;
+    private boolean updatingOutput;
 
     public MechanicalRepairStationBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -105,64 +106,42 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (level == null || level.isClientSide)
             return false;
         ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
-        if (target.isEmpty() || !target.isDamageableItem())
-            return false;
-        int damage = target.getDamageValue();
-        if (damage <= 0)
-            return false;
+        return !handleRepairAndExtract(player).isEmpty();
+    }
 
-        int maxRepair = damage;
-        boolean enchanted = target.isEnchanted();
-        int manaPerDurability = manaPerDurability();
-        if (enchanted && manaPerDurability > 0)
-            maxRepair = Math.min(maxRepair, manaBuffer / manaPerDurability);
-        if (maxRepair <= 0)
-            return false;
+    public ItemStack handleRepairAndExtract(Player player) {
+        if (level == null || level.isClientSide)
+            return ItemStack.EMPTY;
+        ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
+        RepairPlan plan = planRepair(target);
+        if (plan == null || plan.totalRepair <= 0)
+            return ItemStack.EMPTY;
 
-        boolean freeRepair = isFreeRepairCandidate(target);
-        double durabilityPerMaterial = target.getMaxDamage() / 3.0;
-        if (!freeRepair) {
-            int availableMaterials = countMaterials(target);
-            int maxByMaterials = (int) Math.floor(availableMaterials * durabilityPerMaterial);
-            maxRepair = Math.min(maxRepair, maxByMaterials);
-        }
-        if (maxRepair <= 0)
-            return false;
-
-        int fePerDurability = fePerDurability();
-        int maxFeRepair = fePerDurability > 0 ? feBuffer / fePerDurability : 0;
-        int feRepair = Math.min(maxRepair, maxFeRepair);
-        int remaining = maxRepair - feRepair;
-        int rotRepair = 0;
-        if (remaining > 0 && (feBuffer - (feRepair * fePerDurability)) < fePerDurability)
-            rotRepair = Math.min(remaining, Mth.floor(rotationBuffer));
-        int totalRepair = feRepair + rotRepair;
-        if (totalRepair <= 0)
-            return false;
-
-        if (!freeRepair) {
-            int materialsToConsume = (int) Math.ceil(totalRepair / durabilityPerMaterial);
-            if (materialsToConsume > 0) {
-                int consumed = consumeMaterials(target, materialsToConsume);
-                if (consumed < materialsToConsume)
-                    return false;
-            }
+        if (!plan.freeRepair && plan.materialsToConsume > 0) {
+            int consumed = consumeMaterials(target, plan.materialsToConsume);
+            if (consumed < plan.materialsToConsume)
+                return ItemStack.EMPTY;
         }
 
-        if (fePerDurability > 0 && feRepair > 0)
-            feBuffer = Math.max(0, feBuffer - (feRepair * fePerDurability));
-        if (rotRepair > 0)
-            rotationBuffer = Math.max(0f, rotationBuffer - rotRepair * ROTATIONS_PER_DURABILITY);
-        if (enchanted && manaPerDurability > 0 && totalRepair > 0)
-            manaBuffer = Math.max(0, manaBuffer - (totalRepair * manaPerDurability));
+        if (plan.feRepair > 0) {
+            int cost = plan.feRepair * plan.fePerDurability;
+            feBuffer = Math.max(0, feBuffer - cost);
+        }
+        if (plan.rotRepair > 0)
+            rotationBuffer = Math.max(0f, rotationBuffer - plan.rotRepair * ROTATIONS_PER_DURABILITY);
+        if (plan.manaCost > 0)
+            manaBuffer = Math.max(0, manaBuffer - plan.manaCost);
 
-        target.setDamageValue(Math.max(0, damage - totalRepair));
-        inventory.setStackInSlot(TARGET_SLOT, target);
+        int repairedDamage = Math.max(0, target.getDamageValue() - plan.totalRepair);
+        ItemStack result = target.copy();
+        result.setDamageValue(repairedDamage);
+        inventory.setStackInSlot(TARGET_SLOT, ItemStack.EMPTY);
 
         playRepairSound();
         setChanged();
         sendData();
-        return true;
+        updateOutputPreview();
+        return result;
     }
 
     public boolean handleUpgrade(Player player) {
@@ -338,7 +317,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         compound.putFloat("RotationBuffer", rotationBuffer);
         compound.putInt("FEBuffer", feBuffer);
         compound.putInt("ManaBuffer", manaBuffer);
-        compound.put("Inventory", inventory.serializeNBT());
+        compound.put("Inventory", serializeInventoryForSave());
         super.write(compound, clientPacket);
     }
 
@@ -349,10 +328,12 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         manaBuffer = compound.getInt("ManaBuffer");
         if (compound.contains("Inventory"))
             inventory.deserializeNBT(compound.getCompound("Inventory"));
+        inventory.setStackInSlot(OUTPUT_SLOT, ItemStack.EMPTY);
         resizeInventoryIfNeeded();
         rotationBuffer = Math.min(rotationBuffer, maxRotations());
         feBuffer = Math.min(feBuffer, maxFeBuffer());
         manaBuffer = Math.min(manaBuffer, maxManaBuffer());
+        updateOutputPreview();
         super.read(compound, clientPacket);
     }
 
@@ -427,6 +408,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             protected void onContentsChanged(int slot) {
                 setChanged();
                 sendData();
+                updateOutputPreview();
             }
         };
     }
@@ -442,5 +424,115 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (itemHandler != null)
             itemHandler.invalidate();
         itemHandler = LazyOptional.of(() -> inventory);
+        updateOutputPreview();
+    }
+
+    private CompoundTag serializeInventoryForSave() {
+        ItemStack output = inventory.getStackInSlot(OUTPUT_SLOT);
+        inventory.setStackInSlot(OUTPUT_SLOT, ItemStack.EMPTY);
+        CompoundTag tag = inventory.serializeNBT();
+        inventory.setStackInSlot(OUTPUT_SLOT, output);
+        return tag;
+    }
+
+    private void updateOutputPreview() {
+        if (updatingOutput)
+            return;
+        if (inventory.getSlots() <= OUTPUT_SLOT)
+            return;
+        updatingOutput = true;
+        try {
+            ItemStack preview = buildRepairPreview();
+            ItemStack current = inventory.getStackInSlot(OUTPUT_SLOT);
+            if (!isSamePreview(current, preview))
+                inventory.setStackInSlot(OUTPUT_SLOT, preview);
+        } finally {
+            updatingOutput = false;
+        }
+    }
+
+    private ItemStack buildRepairPreview() {
+        ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
+        RepairPlan plan = planRepair(target);
+        if (plan == null || plan.totalRepair <= 0)
+            return ItemStack.EMPTY;
+        ItemStack preview = target.copy();
+        preview.setDamageValue(Math.max(0, target.getDamageValue() - plan.totalRepair));
+        return preview;
+    }
+
+    private static boolean isSamePreview(ItemStack current, ItemStack preview) {
+        if (current.isEmpty() && preview.isEmpty())
+            return true;
+        if (current.isEmpty() || preview.isEmpty())
+            return false;
+        return ItemStack.isSameItemSameTags(current, preview)
+                && current.getDamageValue() == preview.getDamageValue()
+                && current.getCount() == preview.getCount();
+    }
+
+    private RepairPlan planRepair(ItemStack target) {
+        if (target.isEmpty() || !target.isDamageableItem())
+            return null;
+        int damage = target.getDamageValue();
+        if (damage <= 0)
+            return null;
+
+        int maxRepair = damage;
+        boolean enchanted = target.isEnchanted();
+        int manaPerDurability = manaPerDurability();
+        if (enchanted && manaPerDurability > 0)
+            maxRepair = Math.min(maxRepair, manaBuffer / manaPerDurability);
+        if (maxRepair <= 0)
+            return null;
+
+        boolean freeRepair = isFreeRepairCandidate(target);
+        double durabilityPerMaterial = target.getMaxDamage() / 3.0;
+        if (!freeRepair) {
+            int availableMaterials = countMaterials(target);
+            int maxByMaterials = (int) Math.floor(availableMaterials * durabilityPerMaterial);
+            maxRepair = Math.min(maxRepair, maxByMaterials);
+        }
+        if (maxRepair <= 0)
+            return null;
+
+        int fePerDurability = fePerDurability();
+        int maxFeRepair = fePerDurability > 0 ? feBuffer / fePerDurability : 0;
+        int feRepair = Math.min(maxRepair, maxFeRepair);
+        int remaining = maxRepair - feRepair;
+        int rotRepair = 0;
+        if (remaining > 0 && (feBuffer - (feRepair * fePerDurability)) < fePerDurability)
+            rotRepair = Math.min(remaining, Mth.floor(rotationBuffer));
+        int totalRepair = feRepair + rotRepair;
+        if (totalRepair <= 0)
+            return null;
+
+        int materialsToConsume = 0;
+        if (!freeRepair)
+            materialsToConsume = (int) Math.ceil(totalRepair / durabilityPerMaterial);
+        int manaCost = enchanted && manaPerDurability > 0 ? totalRepair * manaPerDurability : 0;
+
+        return new RepairPlan(totalRepair, materialsToConsume, feRepair, fePerDurability, rotRepair, manaCost, freeRepair);
+    }
+
+    private static class RepairPlan {
+        private final int totalRepair;
+        private final int materialsToConsume;
+        private final int feRepair;
+        private final int fePerDurability;
+        private final int rotRepair;
+        private final int manaCost;
+        private final boolean freeRepair;
+
+        private RepairPlan(int totalRepair, int materialsToConsume, int feRepair, int fePerDurability, int rotRepair,
+                           int manaCost, boolean freeRepair) {
+            this.totalRepair = totalRepair;
+            this.materialsToConsume = materialsToConsume;
+            this.feRepair = feRepair;
+            this.fePerDurability = fePerDurability;
+            this.rotRepair = rotRepair;
+            this.manaCost = manaCost;
+            this.freeRepair = freeRepair;
+        }
     }
 }
