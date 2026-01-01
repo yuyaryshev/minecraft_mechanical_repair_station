@@ -35,9 +35,9 @@ public class MechanicalRepairStationScreen extends AbstractContainerScreen<Mecha
         int upgradeX = leftPos + 4;
         int upgradeY = topPos + UPGRADE_Y - 2;
         int repairX = leftPos + 134;
-        int repairY = topPos + UPGRADE_Y - 2;
-        repairButton = Button.builder(Component.literal("Repair"), button -> handleClick(REPAIR_BUTTON_ID))
-                .bounds(repairX, repairY, 36, 14)
+        int repairY = topPos + UPGRADE_Y - 16;
+        repairButton = Button.builder(Component.literal("R.All!"), button -> handleClick(REPAIR_BUTTON_ID))
+                .bounds(repairX, repairY, 36, 28)
                 .build();
         upgradeButton = Button.builder(Component.literal("Upg"), button -> handleClick(UPGRADE_BUTTON_ID))
                 .bounds(upgradeX, upgradeY, 36, 14)

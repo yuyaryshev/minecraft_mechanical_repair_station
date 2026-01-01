@@ -155,7 +155,7 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
         if (player.level().isClientSide)
             return true;
         if (id == 0)
-            return true;
+            return station.handleRepairAll(player);
         if (id == 1)
             return station.handleUpgrade(player);
         return super.clickMenuButton(player, id);

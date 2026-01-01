@@ -113,28 +113,9 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (level == null || level.isClientSide)
             return ItemStack.EMPTY;
         ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
-        RepairPlan plan = planRepair(target);
-        if (plan == null || plan.totalRepair <= 0)
+        ItemStack result = repairStack(target);
+        if (result.isEmpty())
             return ItemStack.EMPTY;
-
-        if (!plan.freeRepair && plan.materialsToConsume > 0) {
-            int consumed = consumeMaterials(target, plan.materialsToConsume);
-            if (consumed < plan.materialsToConsume)
-                return ItemStack.EMPTY;
-        }
-
-        if (plan.feRepair > 0) {
-            int cost = plan.feRepair * plan.fePerDurability;
-            feBuffer = Math.max(0, feBuffer - cost);
-        }
-        if (plan.rotRepair > 0)
-            rotationBuffer = Math.max(0f, rotationBuffer - plan.rotRepair * ROTATIONS_PER_DURABILITY);
-        if (plan.manaCost > 0)
-            manaBuffer = Math.max(0, manaBuffer - plan.manaCost);
-
-        int repairedDamage = Math.max(0, target.getDamageValue() - plan.totalRepair);
-        ItemStack result = target.copy();
-        result.setDamageValue(repairedDamage);
         inventory.setStackInSlot(TARGET_SLOT, ItemStack.EMPTY);
 
         playRepairSound();
@@ -142,6 +123,51 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         sendData();
         updateOutputPreview();
         return result;
+    }
+
+    public boolean handleRepairAll(Player player) {
+        if (level == null || level.isClientSide || player == null)
+            return false;
+        boolean repairedAny = false;
+        Inventory playerInventory = player.getInventory();
+
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = playerInventory.getItem(slot);
+            ItemStack repaired = repairStack(stack);
+            if (!repaired.isEmpty()) {
+                playerInventory.setItem(slot, repaired);
+                playRepairSound();
+                repairedAny = true;
+            }
+        }
+
+        for (int slot = 0; slot < playerInventory.armor.size(); slot++) {
+            ItemStack stack = playerInventory.armor.get(slot);
+            ItemStack repaired = repairStack(stack);
+            if (!repaired.isEmpty()) {
+                playerInventory.armor.set(slot, repaired);
+                playRepairSound();
+                repairedAny = true;
+            }
+        }
+
+        for (int slot = 0; slot < playerInventory.offhand.size(); slot++) {
+            ItemStack stack = playerInventory.offhand.get(slot);
+            ItemStack repaired = repairStack(stack);
+            if (!repaired.isEmpty()) {
+                playerInventory.offhand.set(slot, repaired);
+                playRepairSound();
+                repairedAny = true;
+            }
+        }
+
+        if (repairedAny) {
+            setChanged();
+            sendData();
+            updateOutputPreview();
+        }
+
+        return repairedAny;
     }
 
     public boolean handleUpgrade(Player player) {
@@ -469,6 +495,31 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         return ItemStack.isSameItemSameTags(current, preview)
                 && current.getDamageValue() == preview.getDamageValue()
                 && current.getCount() == preview.getCount();
+    }
+
+    private ItemStack repairStack(ItemStack target) {
+        RepairPlan plan = planRepair(target);
+        if (plan == null || plan.totalRepair <= 0)
+            return ItemStack.EMPTY;
+
+        if (!plan.freeRepair && plan.materialsToConsume > 0) {
+            int consumed = consumeMaterials(target, plan.materialsToConsume);
+            if (consumed < plan.materialsToConsume)
+                return ItemStack.EMPTY;
+        }
+
+        if (plan.feRepair > 0) {
+            int cost = plan.feRepair * plan.fePerDurability;
+            feBuffer = Math.max(0, feBuffer - cost);
+        }
+        if (plan.rotRepair > 0)
+            rotationBuffer = Math.max(0f, rotationBuffer - plan.rotRepair * ROTATIONS_PER_DURABILITY);
+        if (plan.manaCost > 0)
+            manaBuffer = Math.max(0, manaBuffer - plan.manaCost);
+
+        ItemStack result = target.copy();
+        result.setDamageValue(Math.max(0, target.getDamageValue() - plan.totalRepair));
+        return result;
     }
 
     private RepairPlan planRepair(ItemStack target) {
