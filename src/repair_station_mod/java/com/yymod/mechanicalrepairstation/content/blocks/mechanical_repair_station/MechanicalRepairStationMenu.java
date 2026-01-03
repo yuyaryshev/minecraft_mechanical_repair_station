@@ -10,6 +10,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.inventory.DataSlot;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.items.ItemStackHandler;
@@ -24,6 +25,8 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
 
     private final ContainerLevelAccess access;
     private final MechanicalRepairStationBlockEntity station;
+    private final SimpleContainer previewContainer = new SimpleContainer(1);
+    private int previewSlotIndex = -1;
     private int syncedRotations;
     private int syncedFe;
     private int syncedMana;
@@ -45,6 +48,9 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
             }
         });
 
+        previewSlotIndex = this.slots.size();
+        addSlot(new PreviewSlot(previewContainer, 43 + 45 - 95, 17));
+
         int startX = 43;
         int startY = 47;
         int slot = MechanicalRepairStationBlockEntity.MATERIAL_SLOT_START;
@@ -57,7 +63,7 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
         }
 
         if (handler.getSlots() > MechanicalRepairStationBlockEntity.OUTPUT_SLOT) {
-            addSlot(new SlotItemHandler(handler, MechanicalRepairStationBlockEntity.OUTPUT_SLOT, 115, 16) {
+            addSlot(new SlotItemHandler(handler, MechanicalRepairStationBlockEntity.OUTPUT_SLOT, 115, 17) {
                 @Override
                 public boolean mayPlace(ItemStack stack) {
                     return false;
@@ -148,6 +154,16 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
         return syncedMana;
     }
 
+    public ItemStack getPreviewMaterialStack() {
+        if (station == null)
+            return ItemStack.EMPTY;
+        return station.getPreviewMaterialStack();
+    }
+
+    public boolean hasEnoughPreviewMaterials() {
+        return station != null && station.hasEnoughPreviewMaterials();
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (station == null)
@@ -171,6 +187,8 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         ItemStack itemstack = ItemStack.EMPTY;
+        if (index == previewSlotIndex)
+            return ItemStack.EMPTY;
         Slot slot = this.slots.get(index);
         if (slot != null && slot.hasItem()) {
             ItemStack slotStack = slot.getItem();
@@ -199,5 +217,34 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
         }
 
         return itemstack;
+    }
+
+    private class PreviewSlot extends Slot {
+        public PreviewSlot(SimpleContainer container, int x, int y) {
+            super(container, 0, x, y);
+        }
+
+        @Override
+        public boolean mayPlace(ItemStack stack) {
+            return false;
+        }
+
+        @Override
+        public boolean mayPickup(Player player) {
+            return false;
+        }
+
+        @Override
+        public ItemStack getItem() {
+            return station != null ? station.getPreviewMaterialStack() : ItemStack.EMPTY;
+        }
+
+        @Override
+        public void set(ItemStack stack) {
+        }
+
+        @Override
+        public void setChanged() {
+        }
     }
 }

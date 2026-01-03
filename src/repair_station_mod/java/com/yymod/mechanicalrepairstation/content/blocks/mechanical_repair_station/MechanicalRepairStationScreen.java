@@ -18,6 +18,10 @@ public class MechanicalRepairStationScreen extends AbstractContainerScreen<Mecha
     private static final int UPGRADE_BUTTON_ID = 1;
     private static final int GAUGE_X = 3;
     private static final int GAUGE_Y = 4;
+    private static final int TARGET_X = 43;
+    private static final int TARGET_Y = 17;
+    private static final int PREVIEW_X = TARGET_X + 21;
+    private static final int PREVIEW_Y = TARGET_Y-1;
     private static final int UPGRADE_Y = 69;
 
     private Button repairButton;
@@ -59,6 +63,7 @@ public class MechanicalRepairStationScreen extends AbstractContainerScreen<Mecha
         guiGraphics.blit(BG, leftPos, topPos, 0, 0, imageWidth, imageHeight, imageWidth, imageHeight);
         guiGraphics.blit(BG_OVERLAY, leftPos + 2, topPos + 2, 0, 0, 170, 80, 170, 80);
         RenderSystem.disableBlend();
+        renderPreviewBackground(guiGraphics);
         int gaugeHeight = (UPGRADE_Y - 3) - GAUGE_Y;
         int gaugeBottom = topPos + GAUGE_Y + gaugeHeight;
         renderGauge(guiGraphics, leftPos + GAUGE_X, gaugeBottom, 6, gaugeHeight,
@@ -89,6 +94,15 @@ public class MechanicalRepairStationScreen extends AbstractContainerScreen<Mecha
         if (filled <= 0)
             return;
         guiGraphics.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
+    }
+
+    private void renderPreviewBackground(GuiGraphics guiGraphics) {
+        if (menu.getPreviewMaterialStack().isEmpty())
+            return;
+        int color = menu.hasEnoughPreviewMaterials() ? 0x8032C864 : 0x80C83C3C;
+        int x = leftPos + PREVIEW_X;
+        int y = topPos + PREVIEW_Y;
+        guiGraphics.fill(x, y, x + 18, y + 18, color);
     }
 
     private void handleClick(int id) {

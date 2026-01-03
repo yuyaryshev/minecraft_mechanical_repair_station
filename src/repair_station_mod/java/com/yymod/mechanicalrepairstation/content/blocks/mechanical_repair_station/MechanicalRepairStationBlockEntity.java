@@ -248,6 +248,115 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         return target.getItem().isValidRepairItem(target, material);
     }
 
+    public ItemStack getPreviewMaterialStack() {
+        MaterialRequirement requirement = buildMaterialRequirement();
+        if (requirement == null)
+            return ItemStack.EMPTY;
+        return requirement.stack.copy();
+    }
+
+    public boolean hasEnoughPreviewMaterials() {
+        MaterialRequirement requirement = buildMaterialRequirement();
+        if (requirement == null)
+            return false;
+        return requirement.available >= requirement.required;
+    }
+
+    private MaterialRequirement buildMaterialRequirement() {
+        ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
+        if (target.isEmpty() || !target.isDamageableItem())
+            return null;
+        int required = getRequiredMaterialCount(target);
+        if (required <= 0)
+            return null;
+        ResourceLocation materialId = findMappedMaterialId(target);
+        if (materialId == null)
+            return null;
+        Item materialItem = ForgeRegistries.ITEMS.getValue(materialId);
+        if (materialItem == null)
+            return null;
+        int available = countMaterialsById(materialId);
+        int maxStackSize = materialItem.getMaxStackSize();
+        ItemStack stack = new ItemStack(materialItem, Math.min(required, maxStackSize));
+        return new MaterialRequirement(stack, required, available);
+    }
+
+    private int countMaterialsById(ResourceLocation materialId) {
+        int count = 0;
+        for (int slot = MATERIAL_SLOT_START; slot <= getMaterialSlotEnd(); slot++) {
+            ItemStack stack = inventory.getStackInSlot(slot);
+            if (stack.isEmpty())
+                continue;
+            ResourceLocation stackId = ForgeRegistries.ITEMS.getKey(stack.getItem());
+            if (materialId.equals(stackId))
+                count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static int getRequiredMaterialCount(ItemStack target) {
+        if (!target.isDamageableItem())
+            return 0;
+        int damage = target.getDamageValue();
+        if (damage <= 0)
+            return 0;
+        if (isFreeRepairCandidate(target))
+            return 0;
+        double durabilityPerMaterial = target.getMaxDamage() / 3.0;
+        if (durabilityPerMaterial <= 0)
+            return 0;
+        return (int) Math.ceil(damage / durabilityPerMaterial);
+    }
+
+    private static ResourceLocation findMappedMaterialId(ItemStack target) {
+        if (MRSConfigs.common() == null)
+            return null;
+        List<? extends String> mappings = MRSConfigs.common().mechanicalRepairStation.materialJsonMappings.get();
+        if (mappings == null || mappings.isEmpty())
+            return null;
+
+        ResourceLocation targetId = ForgeRegistries.ITEMS.getKey(target.getItem());
+        if (targetId == null)
+            return null;
+
+        for (String entry : mappings) {
+            if (entry == null)
+                continue;
+            String trimmed = entry.trim();
+            if (trimmed.isEmpty())
+                continue;
+
+            int separator = trimmed.indexOf("->");
+            int separatorLength = 2;
+            if (separator < 0) {
+                separator = trimmed.indexOf('=');
+                separatorLength = 1;
+            }
+            if (separator < 0)
+                continue;
+
+            String patternText = trimmed.substring(0, separator).trim();
+            String itemText = trimmed.substring(separator + separatorLength).trim();
+            if (patternText.isEmpty() || itemText.isEmpty())
+                continue;
+            if (!itemText.contains(":"))
+                itemText = "minecraft:" + itemText;
+
+            ResourceLocation itemId = ResourceLocation.tryParse(itemText);
+            if (itemId == null)
+                continue;
+
+            JsonObject rule = parseJsonRule(patternText);
+            if (rule == null)
+                continue;
+
+            if (matchesRule(target, targetId, rule))
+                return itemId;
+        }
+
+        return null;
+    }
+
     private static boolean matchesJsonMaterialMapping(ItemStack target, ItemStack material) {
         if (MRSConfigs.common() == null)
             return false;
@@ -352,6 +461,18 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (material.getTag() == null)
             return false;
         return material.getTag().toString().contains(part);
+    }
+
+    private static class MaterialRequirement {
+        private final ItemStack stack;
+        private final int required;
+        private final int available;
+
+        private MaterialRequirement(ItemStack stack, int required, int available) {
+            this.stack = stack;
+            this.required = required;
+            this.available = available;
+        }
     }
 
     private boolean consumeWillOfDurability(Item willItem) {
