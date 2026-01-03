@@ -19,6 +19,7 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.Tier;
 import net.minecraft.world.item.TieredItem;
 import net.minecraft.world.item.Tiers;
@@ -271,6 +272,8 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             return null;
         ResourceLocation materialId = findMappedMaterialId(target);
         if (materialId == null)
+            materialId = findVanillaRepairMaterialId(target);
+        if (materialId == null)
             return null;
         Item materialItem = ForgeRegistries.ITEMS.getValue(materialId);
         if (materialItem == null)
@@ -355,6 +358,22 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         }
 
         return null;
+    }
+
+    private static ResourceLocation findVanillaRepairMaterialId(ItemStack target) {
+        Ingredient ingredient = null;
+        Item item = target.getItem();
+        if (item instanceof TieredItem tiered) {
+            ingredient = tiered.getTier().getRepairIngredient();
+        } else if (item instanceof ArmorItem armor) {
+            ingredient = armor.getMaterial().getRepairIngredient();
+        }
+        if (ingredient == null || ingredient.isEmpty())
+            return null;
+        ItemStack[] matching = ingredient.getItems();
+        if (matching.length == 0 || matching[0].isEmpty())
+            return null;
+        return ForgeRegistries.ITEMS.getKey(matching[0].getItem());
     }
 
     private static boolean matchesJsonMaterialMapping(ItemStack target, ItemStack material) {
