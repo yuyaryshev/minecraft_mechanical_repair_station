@@ -15,3 +15,4 @@ Status legend: todo -> implemented -> done. Ask for testing before moving from i
 | Upgrade button: consumes yyitems:will_of_durability and materials (3 + existing upgrade levels); adds 10% base max durability | implemented | Uses ItemStack mixin to add bonus max durability. |
 | Sounds on repair (anvil) and upgrade (enchant) | implemented | Plays sound server-side. |
 | Basic items free repair (non-enchanted leather/stone/wood); upgrades still require materials | implemented | Applies only to repair. |
+| Death durability loss | todo | Config added but damage on death not applying; revisit with pre-death or drop handling. |

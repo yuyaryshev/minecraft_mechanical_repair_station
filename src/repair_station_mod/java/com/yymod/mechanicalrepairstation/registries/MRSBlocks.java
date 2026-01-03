@@ -6,7 +6,6 @@ import com.yymod.mechanicalrepairstation.content.blocks.mechanical_repair_statio
 import net.minecraft.world.level.block.Blocks;
 
 import static com.simibubi.create.foundation.data.ModelGen.customItemModel;
-import static com.simibubi.create.foundation.data.TagGen.axeOnly;
 import static com.yymod.mechanicalrepairstation.YYMechanicalRepairStation.REGISTRATE;
 
 public class MRSBlocks {
@@ -14,7 +13,6 @@ public class MRSBlocks {
     public static final BlockEntry<MechanicalRepairStationBlock> MECHANICAL_REPAIR_STATION = REGISTRATE
             .block("mechanical_repair_station", MechanicalRepairStationBlock::new)
             .initialProperties(() -> Blocks.CRAFTING_TABLE)
-            .transform(axeOnly())
             .blockstate(new MechanicalRepairStationGenerator()::generate)
             .item()
             .transform(customItemModel("mechanical_repair_station", "item"))

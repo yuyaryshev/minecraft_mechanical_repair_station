@@ -34,6 +34,11 @@ import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.items.ItemStackHandler;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.util.List;
+
 public class MechanicalRepairStationBlockEntity extends KineticBlockEntity implements MenuProvider {
 
     public static final String TAG_UPGRADE_LEVEL = "RepairStationUpgradeLevel";
@@ -238,7 +243,115 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     }
 
     private static boolean isRepairMaterial(ItemStack target, ItemStack material) {
+        if (matchesJsonMaterialMapping(target, material))
+            return true;
         return target.getItem().isValidRepairItem(target, material);
+    }
+
+    private static boolean matchesJsonMaterialMapping(ItemStack target, ItemStack material) {
+        if (MRSConfigs.common() == null)
+            return false;
+        List<? extends String> mappings = MRSConfigs.common().mechanicalRepairStation.materialJsonMappings.get();
+        if (mappings == null || mappings.isEmpty())
+            return false;
+
+        ResourceLocation materialId = ForgeRegistries.ITEMS.getKey(material.getItem());
+        if (materialId == null)
+            return false;
+        ResourceLocation targetId = ForgeRegistries.ITEMS.getKey(target.getItem());
+        if (targetId == null)
+            return false;
+
+        for (String entry : mappings) {
+            if (entry == null)
+                continue;
+            String trimmed = entry.trim();
+            if (trimmed.isEmpty())
+                continue;
+
+            int separator = trimmed.indexOf("->");
+            int separatorLength = 2;
+            if (separator < 0) {
+                separator = trimmed.indexOf('=');
+                separatorLength = 1;
+            }
+            if (separator < 0)
+                continue;
+
+            String patternText = trimmed.substring(0, separator).trim();
+            String itemText = trimmed.substring(separator + separatorLength).trim();
+            if (patternText.isEmpty() || itemText.isEmpty())
+                continue;
+            if (!itemText.contains(":"))
+                itemText = "minecraft:" + itemText;
+
+            ResourceLocation itemId = ResourceLocation.tryParse(itemText);
+            if (itemId == null || !itemId.equals(materialId))
+                continue;
+
+            JsonObject rule = parseJsonRule(patternText);
+            if (rule == null)
+                continue;
+
+            if (matchesRule(target, targetId, rule))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static JsonObject parseJsonRule(String jsonText) {
+        try {
+            JsonElement element = JsonParser.parseString(jsonText);
+            if (!element.isJsonObject())
+                return null;
+            return element.getAsJsonObject();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static boolean matchesRule(ItemStack target, ResourceLocation targetId, JsonObject rule) {
+        if (!matchesIdRule(targetId, rule))
+            return false;
+        if (!matchesIdPartRule(targetId, rule))
+            return false;
+        return matchesNbtPartRule(target, rule);
+    }
+
+    private static boolean matchesIdRule(ResourceLocation materialId, JsonObject rule) {
+        JsonElement idElement = rule.get("id");
+        if (idElement == null || idElement.isJsonNull())
+            return true;
+        String idText = idElement.getAsString().trim();
+        if (idText.isEmpty())
+            return true;
+        if (!idText.contains(":"))
+            idText = "minecraft:" + idText;
+        ResourceLocation id = ResourceLocation.tryParse(idText);
+        return id != null && id.equals(materialId);
+    }
+
+    private static boolean matchesIdPartRule(ResourceLocation materialId, JsonObject rule) {
+        JsonElement idPartElement = rule.get("id_part");
+        if (idPartElement == null || idPartElement.isJsonNull())
+            return true;
+        String part = idPartElement.getAsString().trim();
+        if (part.isEmpty())
+            return true;
+        return materialId.toString().contains(part);
+    }
+
+    private static boolean matchesNbtPartRule(ItemStack material, JsonObject rule) {
+        JsonElement nbtPartElement = rule.get("nbt_part");
+        if (nbtPartElement == null || nbtPartElement.isJsonNull())
+            return true;
+        String part = nbtPartElement.getAsString();
+        if (part == null || part.isEmpty())
+            return true;
+        if (material.getTag() == null)
+            return false;
+        return material.getTag().toString().contains(part);
     }
 
     private boolean consumeWillOfDurability(Item willItem) {
@@ -343,7 +456,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         compound.putFloat("RotationBuffer", rotationBuffer);
         compound.putInt("FEBuffer", feBuffer);
         compound.putInt("ManaBuffer", manaBuffer);
-        compound.put("Inventory", serializeInventoryForSave());
+        compound.put("Inventory", clientPacket ? inventory.serializeNBT() : serializeInventoryForSave());
         super.write(compound, clientPacket);
     }
 

@@ -48,7 +48,7 @@ public class MechanicalRepairStationScreen extends AbstractContainerScreen<Mecha
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        guiGraphics.drawString(font, Component.literal("Ready"), 43, 34, 0xFF3C4C5C, false);
+        guiGraphics.drawString(font, Component.literal(""), 43, 34, 0xFF3C4C5C, false);
     }
 
     @Override
