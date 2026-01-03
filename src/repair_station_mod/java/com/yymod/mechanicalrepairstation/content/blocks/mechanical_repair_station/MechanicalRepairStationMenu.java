@@ -49,7 +49,7 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
         });
 
         previewSlotIndex = this.slots.size();
-        addSlot(new PreviewSlot(previewContainer, 43 + 45 - 95, 17));
+        addSlot(new PreviewSlot(previewContainer, 65, 17));
 
         int startX = 43;
         int startY = 47;
