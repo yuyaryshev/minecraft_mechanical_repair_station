@@ -19,13 +19,17 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.Tier;
 import net.minecraft.world.item.TieredItem;
 import net.minecraft.world.item.Tiers;
+import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
@@ -35,10 +39,14 @@ import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.items.ItemStackHandler;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MechanicalRepairStationBlockEntity extends KineticBlockEntity implements MenuProvider {
 
@@ -52,6 +60,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     private static final int ROTATIONS_PER_DURABILITY = 1;
     private static final int MANA_SEARCH_RADIUS = 3;
     private static final int MAX_FE_EXTRACT_PER_TICK = 1000;
+    private static final Map<Item, InferredMaterial> INFERRED_MATERIAL_CACHE = new HashMap<>();
 
     private ItemStackHandler inventory;
     private LazyOptional<IItemHandler> itemHandler;
@@ -243,10 +252,73 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         return count - remaining;
     }
 
-    private static boolean isRepairMaterial(ItemStack target, ItemStack material) {
+    private boolean isRepairMaterial(ItemStack target, ItemStack material) {
         if (matchesJsonMaterialMapping(target, material))
             return true;
-        return target.getItem().isValidRepairItem(target, material);
+        if (target.getItem().isValidRepairItem(target, material))
+            return true;
+        if (level == null || MRSConfigs.common() == null)
+            return false;
+        if (!MRSConfigs.common().mechanicalRepairStation.tryInferMaterialFromRecipes.get())
+            return false;
+        InferredMaterial inferred = inferMaterialFromRecipes(target);
+        return inferred != null && inferred.ingredient.test(material);
+    }
+
+    private MaterialInfo getMaterialInfoForRepair(ItemStack target) {
+        int available = countMaterials(target);
+        if (level == null || MRSConfigs.common() == null)
+            return new MaterialInfo(available, false, false, null);
+
+        InferredMaterial inferred = null;
+        if (MRSConfigs.common().mechanicalRepairStation.tryInferMaterialFromRecipes.get())
+            inferred = inferMaterialFromRecipes(target);
+        boolean inferredWoodOrStone = inferred != null && inferred.isWoodOrStone;
+
+        boolean useInferred = available <= 0 && inferred != null;
+        if (useInferred)
+            available = countMaterials(inferred.ingredient);
+
+        return new MaterialInfo(available, useInferred, inferredWoodOrStone, useInferred ? inferred.ingredient : null);
+    }
+
+    private int countMaterials(Ingredient ingredient) {
+        if (ingredient == null || ingredient.isEmpty())
+            return 0;
+        int count = 0;
+        for (int slot = MATERIAL_SLOT_START; slot <= getMaterialSlotEnd(); slot++) {
+            ItemStack stack = inventory.getStackInSlot(slot);
+            if (stack.isEmpty())
+                continue;
+            if (ingredient.test(stack))
+                count += stack.getCount();
+        }
+        return count;
+    }
+
+    private int consumeMaterials(ItemStack target, int count, MaterialInfo info) {
+        if (info != null && info.useInferred && info.ingredient != null)
+            return consumeMaterials(info.ingredient, count);
+        return consumeMaterials(target, count);
+    }
+
+    private int consumeMaterials(Ingredient ingredient, int count) {
+        if (ingredient == null || ingredient.isEmpty())
+            return 0;
+        int remaining = count;
+        for (int slot = MATERIAL_SLOT_START; slot <= getMaterialSlotEnd(); slot++) {
+            if (remaining <= 0)
+                break;
+            ItemStack stack = inventory.getStackInSlot(slot);
+            if (stack.isEmpty() || !ingredient.test(stack))
+                continue;
+            int take = Math.min(remaining, stack.getCount());
+            stack.shrink(take);
+            remaining -= take;
+            if (stack.isEmpty())
+                inventory.setStackInSlot(slot, ItemStack.EMPTY);
+        }
+        return count - remaining;
     }
 
     public ItemStack getPreviewMaterialStack() {
@@ -273,6 +345,17 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         ResourceLocation materialId = findMappedMaterialId(target);
         if (materialId == null)
             materialId = findVanillaRepairMaterialId(target);
+        if (materialId == null && level != null && MRSConfigs.common() != null
+                && MRSConfigs.common().mechanicalRepairStation.tryInferMaterialFromRecipes.get()) {
+            InferredMaterial inferred = inferMaterialFromRecipes(target);
+            if (inferred != null) {
+                ItemStack stack = selectPreviewStack(inferred.ingredient, required);
+                if (!stack.isEmpty()) {
+                    int available = countMaterials(inferred.ingredient);
+                    return new MaterialRequirement(stack, required, available);
+                }
+            }
+        }
         if (materialId == null)
             return null;
         Item materialItem = ForgeRegistries.ITEMS.getValue(materialId);
@@ -297,13 +380,27 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         return count;
     }
 
+    private static ItemStack selectPreviewStack(Ingredient ingredient, int required) {
+        if (ingredient == null || ingredient.isEmpty())
+            return ItemStack.EMPTY;
+        for (ItemStack candidate : ingredient.getItems()) {
+            if (candidate.isEmpty())
+                continue;
+            int count = Math.min(required, candidate.getMaxStackSize());
+            ItemStack stack = candidate.copy();
+            stack.setCount(count);
+            return stack;
+        }
+        return ItemStack.EMPTY;
+    }
+
     private static int getRequiredMaterialCount(ItemStack target) {
         if (!target.isDamageableItem())
             return 0;
         int damage = target.getDamageValue();
         if (damage <= 0)
             return 0;
-        if (isFreeRepairCandidate(target))
+        if (isFreeRepairCandidate(target) || isBelowFreeRepairPercent(target))
             return 0;
         double durabilityPerMaterial = target.getMaxDamage() / 3.0;
         if (durabilityPerMaterial <= 0)
@@ -511,6 +608,163 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         return Math.min(MATERIAL_SLOT_END, inventory.getSlots() - 1);
     }
 
+    public static void clearInferredMaterialCache() {
+        INFERRED_MATERIAL_CACHE.clear();
+    }
+
+    private InferredMaterial inferMaterialFromRecipes(ItemStack target) {
+        if (level == null)
+            return null;
+        Item item = target.getItem();
+        if (INFERRED_MATERIAL_CACHE.containsKey(item))
+            return INFERRED_MATERIAL_CACHE.get(item);
+
+        List<? extends Recipe<?>> recipes = level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING);
+        for (Recipe<?> recipe : recipes) {
+            ItemStack result = recipe.getResultItem(level.registryAccess());
+            if (result.isEmpty() || result.getItem() != item)
+                continue;
+            List<Ingredient> ingredients = recipe.getIngredients();
+            if (ingredients.isEmpty())
+                continue;
+
+            Map<String, IngredientCounter> counts = new LinkedHashMap<>();
+            boolean invalid = false;
+            for (Ingredient ingredient : ingredients) {
+                if (ingredient.isEmpty())
+                    continue;
+                if (hasIngredientNbt(ingredient)) {
+                    invalid = true;
+                    break;
+                }
+                if (isStickIngredient(ingredient))
+                    continue;
+                String key = getIngredientKey(ingredient);
+                if (key == null) {
+                    invalid = true;
+                    break;
+                }
+                IngredientCounter counter = counts.get(key);
+                if (counter == null) {
+                    counter = new IngredientCounter(ingredient);
+                    counts.put(key, counter);
+                }
+                counter.count++;
+            }
+            if (invalid || counts.isEmpty())
+                continue;
+            if (counts.size() > 3)
+                continue;
+
+            IngredientCounter best = null;
+            for (IngredientCounter counter : counts.values()) {
+                if (best == null || counter.count > best.count)
+                    best = counter;
+            }
+            if (best == null)
+                continue;
+
+            InferredMaterial material = new InferredMaterial(best.ingredient, isWoodOrStoneIngredient(best.ingredient));
+            INFERRED_MATERIAL_CACHE.put(item, material);
+            return material;
+        }
+
+        INFERRED_MATERIAL_CACHE.put(item, null);
+        return null;
+    }
+
+    private static boolean hasIngredientNbt(Ingredient ingredient) {
+        for (ItemStack stack : ingredient.getItems()) {
+            if (stack.hasTag())
+                return true;
+        }
+        JsonElement element = ingredient.toJson();
+        if (element.isJsonObject())
+            return element.getAsJsonObject().has("nbt");
+        if (element.isJsonArray()) {
+            for (JsonElement entry : element.getAsJsonArray()) {
+                if (entry.isJsonObject() && entry.getAsJsonObject().has("nbt"))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isStickIngredient(Ingredient ingredient) {
+        ItemStack[] items = ingredient.getItems();
+        if (items.length == 0)
+            return false;
+        for (ItemStack stack : items) {
+            if (stack.isEmpty() || stack.getItem() != Items.STICK)
+                return false;
+        }
+        return true;
+    }
+
+    private static String getIngredientKey(Ingredient ingredient) {
+        JsonElement element = ingredient.toJson();
+        if (element.isJsonObject()) {
+            JsonObject obj = element.getAsJsonObject();
+            if (obj.has("tag"))
+                return "tag:" + obj.get("tag").getAsString();
+            if (obj.has("item"))
+                return "item:" + obj.get("item").getAsString();
+            return null;
+        }
+        if (element.isJsonArray()) {
+            JsonArray array = element.getAsJsonArray();
+            StringBuilder key = new StringBuilder("multi:");
+            for (JsonElement entry : array) {
+                if (!entry.isJsonObject())
+                    return null;
+                JsonObject obj = entry.getAsJsonObject();
+                if (obj.has("tag"))
+                    return "tag:" + obj.get("tag").getAsString();
+                if (!obj.has("item"))
+                    return null;
+                if (key.length() > 6)
+                    key.append('|');
+                key.append(obj.get("item").getAsString());
+            }
+            return key.toString();
+        }
+        return null;
+    }
+
+    private static boolean isWoodOrStoneIngredient(Ingredient ingredient) {
+        ItemStack[] items = ingredient.getItems();
+        if (items.length == 0)
+            return false;
+        for (ItemStack stack : items) {
+            if (stack.isEmpty())
+                continue;
+            if (stack.is(ItemTags.PLANKS) || stack.is(ItemTags.LOGS) || stack.is(ItemTags.LOGS_THAT_BURN))
+                return true;
+            if (stack.is(ItemTags.STONE_CRAFTING_MATERIALS))
+                return true;
+        }
+        return false;
+    }
+
+    private static class IngredientCounter {
+        private final Ingredient ingredient;
+        private int count;
+
+        private IngredientCounter(Ingredient ingredient) {
+            this.ingredient = ingredient;
+        }
+    }
+
+    private static class InferredMaterial {
+        private final Ingredient ingredient;
+        private final boolean isWoodOrStone;
+
+        private InferredMaterial(Ingredient ingredient, boolean isWoodOrStone) {
+            this.ingredient = ingredient;
+            this.isWoodOrStone = isWoodOrStone;
+        }
+    }
+
     private void pullEnergyFromNeighbors() {
         if (level == null || level.isClientSide)
             return;
@@ -577,6 +831,23 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             return tier == Tiers.WOOD || tier == Tiers.STONE;
         }
         return false;
+    }
+
+    private static boolean isBelowFreeRepairPercent(ItemStack stack) {
+        if (MRSConfigs.common() == null)
+            return false;
+        int percent = MRSConfigs.common().mechanicalRepairStation.repairWithoutMaterialPercent.get();
+        percent = Math.max(0, Math.min(100, percent));
+        if (percent <= 0)
+            return false;
+        int maxDamage = stack.getMaxDamage();
+        if (maxDamage <= 0)
+            return false;
+        int damage = stack.getDamageValue();
+        if (damage <= 0)
+            return true;
+        double missingPercent = (damage * 100.0) / maxDamage;
+        return missingPercent <= percent;
     }
 
     private void playRepairSound() {
@@ -756,7 +1027,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             return ItemStack.EMPTY;
 
         if (!plan.freeRepair && plan.materialsToConsume > 0) {
-            int consumed = consumeMaterials(target, plan.materialsToConsume);
+            int consumed = consumeMaterials(target, plan.materialsToConsume, plan.materialInfo);
             if (consumed < plan.materialsToConsume)
                 return ItemStack.EMPTY;
         }
@@ -790,33 +1061,63 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (maxRepair <= 0)
             return null;
 
-        boolean freeRepair = isFreeRepairCandidate(target);
+        MaterialInfo materialInfo = getMaterialInfoForRepair(target);
+        boolean freeRepair = isFreeRepairCandidate(target)
+                || isBelowFreeRepairPercent(target)
+                || materialInfo.inferredWoodOrStone;
         double durabilityPerMaterial = target.getMaxDamage() / 3.0;
-        if (!freeRepair) {
-            int availableMaterials = countMaterials(target);
-            int maxByMaterials = (int) Math.floor(availableMaterials * durabilityPerMaterial);
-            maxRepair = Math.min(maxRepair, maxByMaterials);
-        }
-        if (maxRepair <= 0)
+        if (!freeRepair && durabilityPerMaterial <= 0)
             return null;
 
         int fePerDurability = fePerDurability();
-        int maxFeRepair = fePerDurability > 0 ? feBuffer / fePerDurability : 0;
-        int feRepair = Math.min(maxRepair, maxFeRepair);
-        int remaining = maxRepair - feRepair;
+        int totalRepair = 0;
+        int feRepair = 0;
         int rotRepair = 0;
-        if (remaining > 0 && (feBuffer - (feRepair * fePerDurability)) < fePerDurability)
-            rotRepair = Math.min(remaining, Mth.floor(rotationBuffer));
-        int totalRepair = feRepair + rotRepair;
+        int materialsToConsume = 0;
+
+        if (freeRepair) {
+            int maxFeRepair = fePerDurability > 0 ? feBuffer / fePerDurability : 0;
+            feRepair = Math.min(maxRepair, maxFeRepair);
+            int remaining = maxRepair - feRepair;
+            if (remaining > 0 && (feBuffer - (feRepair * fePerDurability)) < fePerDurability)
+                rotRepair = Math.min(remaining, Mth.floor(rotationBuffer));
+            totalRepair = feRepair + rotRepair;
+        } else {
+            int remainingDamage = maxRepair;
+            int feAvailable = feBuffer;
+            int rotationsAvailable = Mth.floor(rotationBuffer);
+            int manaAvailable = manaBuffer;
+            int availableMaterials = materialInfo.available;
+            int pieceDurability = (int) Math.ceil(durabilityPerMaterial);
+            for (int piece = 0; piece < availableMaterials && remainingDamage > 0; piece++) {
+                int repairThisPiece = Math.min(remainingDamage, pieceDurability);
+                if (enchanted && manaPerDurability > 0 && manaAvailable < repairThisPiece * manaPerDurability)
+                    break;
+                int pieceFeDurability = fePerDurability > 0
+                        ? Math.min(repairThisPiece, feAvailable / fePerDurability)
+                        : 0;
+                int pieceRotDurability = repairThisPiece - pieceFeDurability;
+                if (pieceRotDurability > rotationsAvailable)
+                    break;
+                feAvailable -= pieceFeDurability * fePerDurability;
+                rotationsAvailable -= pieceRotDurability;
+                if (enchanted && manaPerDurability > 0)
+                    manaAvailable -= repairThisPiece * manaPerDurability;
+                feRepair += pieceFeDurability;
+                rotRepair += pieceRotDurability;
+                totalRepair += repairThisPiece;
+                materialsToConsume++;
+                remainingDamage -= repairThisPiece;
+            }
+        }
+
         if (totalRepair <= 0)
             return null;
 
-        int materialsToConsume = 0;
-        if (!freeRepair)
-            materialsToConsume = (int) Math.ceil(totalRepair / durabilityPerMaterial);
         int manaCost = enchanted && manaPerDurability > 0 ? totalRepair * manaPerDurability : 0;
 
-        return new RepairPlan(totalRepair, materialsToConsume, feRepair, fePerDurability, rotRepair, manaCost, freeRepair);
+        return new RepairPlan(totalRepair, materialsToConsume, feRepair, fePerDurability, rotRepair, manaCost, freeRepair,
+                materialInfo);
     }
 
     private static class RepairPlan {
@@ -827,9 +1128,10 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         private final int rotRepair;
         private final int manaCost;
         private final boolean freeRepair;
+        private final MaterialInfo materialInfo;
 
         private RepairPlan(int totalRepair, int materialsToConsume, int feRepair, int fePerDurability, int rotRepair,
-                           int manaCost, boolean freeRepair) {
+                           int manaCost, boolean freeRepair, MaterialInfo materialInfo) {
             this.totalRepair = totalRepair;
             this.materialsToConsume = materialsToConsume;
             this.feRepair = feRepair;
@@ -837,6 +1139,21 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             this.rotRepair = rotRepair;
             this.manaCost = manaCost;
             this.freeRepair = freeRepair;
+            this.materialInfo = materialInfo;
+        }
+    }
+
+    private static class MaterialInfo {
+        private final int available;
+        private final boolean useInferred;
+        private final boolean inferredWoodOrStone;
+        private final Ingredient ingredient;
+
+        private MaterialInfo(int available, boolean useInferred, boolean inferredWoodOrStone, Ingredient ingredient) {
+            this.available = available;
+            this.useInferred = useInferred;
+            this.inferredWoodOrStone = inferredWoodOrStone;
+            this.ingredient = ingredient;
         }
     }
 }

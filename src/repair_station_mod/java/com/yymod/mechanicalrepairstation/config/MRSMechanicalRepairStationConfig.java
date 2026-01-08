@@ -16,6 +16,8 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
     public static final float DEFAULT_STRESS_IMPACT = 0.0f;
     public static final boolean DEFAULT_DEATH_BREAKS_ITEMS = true;
     public static final int DEFAULT_DEATH_DURABILITY_LOSS_PERCENT = 100;
+    public static final boolean DEFAULT_TRY_INFER_MATERIAL_FROM_RECIPES = true;
+    public static final int DEFAULT_REPAIR_WITHOUT_MATERIAL_PERCENT = 20;
     public static final List<String> DEFAULT_MATERIAL_JSON_MAPPINGS = List.of(
             "{\"nbt_part\":\"\\\"rar\\\":\\\"common\\\"\"}=minecraft:copper_ingot",
             "{\"nbt_part\":\"\\\"rar\\\":\\\"uncommon\\\"\"}=minecraft:iron_ingot",
@@ -34,6 +36,8 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
     public final ConfigFloat stressImpact;
     public final ConfigBool deathBreaksItems;
     public final ConfigInt deathDurabilityLossPercent;
+    public final ConfigBool tryInferMaterialFromRecipes;
+    public final ConfigInt repairWithoutMaterialPercent;
     public final CValue<List<? extends String>, ForgeConfigSpec.ConfigValue<List<? extends String>>> materialJsonMappings;
 
     public MRSMechanicalRepairStationConfig() {
@@ -47,6 +51,10 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
         deathBreaksItems = b(DEFAULT_DEATH_BREAKS_ITEMS, "deathBreaksItems", Comments.deathBreaksItems);
         deathDurabilityLossPercent = i(DEFAULT_DEATH_DURABILITY_LOSS_PERCENT, 0, 100, "deathDurabilityLossPercent",
                 Comments.deathDurabilityLossPercent);
+        tryInferMaterialFromRecipes = b(DEFAULT_TRY_INFER_MATERIAL_FROM_RECIPES, "tryInferMaterialFromRecipes",
+                Comments.tryInferMaterialFromRecipes);
+        repairWithoutMaterialPercent = i(DEFAULT_REPAIR_WITHOUT_MATERIAL_PERCENT, 0, 100, "repairWithoutMaterialPercent",
+                Comments.repairWithoutMaterialPercent);
         materialJsonMappings = new CValue<>("materialJsonMappings",
                 builder -> builder.defineList("materialJsonMappings", DEFAULT_MATERIAL_JSON_MAPPINGS,
                         entry -> entry instanceof String),
@@ -68,6 +76,8 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
         static String stressImpact = "Stress impact while charging.";
         static String deathBreaksItems = "If true, death reduces durability of equipped and hotbar items.";
         static String deathDurabilityLossPercent = "Percent of max durability lost on death (0-100).";
+        static String tryInferMaterialFromRecipes = "Try to infer repair materials from crafting recipes.";
+        static String repairWithoutMaterialPercent = "Repair without material if item's damage is less than this %.";
         static String materialJsonMappings = "JSON-to-material mappings for repair ingredients (json=namespace:item).";
     }
 }
