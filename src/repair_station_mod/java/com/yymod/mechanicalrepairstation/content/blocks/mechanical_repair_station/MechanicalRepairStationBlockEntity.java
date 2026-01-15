@@ -3,6 +3,7 @@ package com.yymod.mechanicalrepairstation.content.blocks.mechanical_repair_stati
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.yymod.mechanicalrepairstation.config.MRSConfigs;
 import com.yymod.mechanicalrepairstation.config.MRSMechanicalRepairStationConfig;
+import com.yymod.mechanicalrepairstation.YYMechanicalRepairStation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -69,6 +70,11 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     private int feBuffer;
     private int manaBuffer;
     private boolean updatingOutput;
+    private boolean lastTargetEmpty;
+    private boolean debugPending;
+    private String debugMaterialSpec;
+    private String debugRequester;
+    private String statusMessage = "";
 
     public MechanicalRepairStationBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -77,6 +83,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         manaBuffer = 0;
         inventory = createHandler(INVENTORY_SIZE);
         itemHandler = LazyOptional.of(() -> inventory);
+        lastTargetEmpty = true;
     }
 
     @Override
@@ -128,7 +135,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (level == null || level.isClientSide)
             return ItemStack.EMPTY;
         ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
-        ItemStack result = repairStack(target);
+        ItemStack result = repairStack(target, true);
         if (result.isEmpty())
             return ItemStack.EMPTY;
         inventory.setStackInSlot(TARGET_SLOT, ItemStack.EMPTY);
@@ -144,35 +151,49 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (level == null || level.isClientSide || player == null)
             return false;
         boolean repairedAny = false;
+        boolean attempted = false;
+        boolean failedAny = false;
         Inventory playerInventory = player.getInventory();
 
         for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = playerInventory.getItem(slot);
-            ItemStack repaired = repairStack(stack);
+            if (stack.isDamageableItem() && stack.getDamageValue() > 0)
+                attempted = true;
+            ItemStack repaired = repairStack(stack, false);
             if (!repaired.isEmpty()) {
                 playerInventory.setItem(slot, repaired);
                 playRepairSound();
                 repairedAny = true;
+            } else if (stack.isDamageableItem() && stack.getDamageValue() > 0) {
+                failedAny = true;
             }
         }
 
         for (int slot = 0; slot < playerInventory.armor.size(); slot++) {
             ItemStack stack = playerInventory.armor.get(slot);
-            ItemStack repaired = repairStack(stack);
+            if (stack.isDamageableItem() && stack.getDamageValue() > 0)
+                attempted = true;
+            ItemStack repaired = repairStack(stack, false);
             if (!repaired.isEmpty()) {
                 playerInventory.armor.set(slot, repaired);
                 playRepairSound();
                 repairedAny = true;
+            } else if (stack.isDamageableItem() && stack.getDamageValue() > 0) {
+                failedAny = true;
             }
         }
 
         for (int slot = 0; slot < playerInventory.offhand.size(); slot++) {
             ItemStack stack = playerInventory.offhand.get(slot);
-            ItemStack repaired = repairStack(stack);
+            if (stack.isDamageableItem() && stack.getDamageValue() > 0)
+                attempted = true;
+            ItemStack repaired = repairStack(stack, false);
             if (!repaired.isEmpty()) {
                 playerInventory.offhand.set(slot, repaired);
                 playRepairSound();
                 repairedAny = true;
+            } else if (stack.isDamageableItem() && stack.getDamageValue() > 0) {
+                failedAny = true;
             }
         }
 
@@ -180,6 +201,15 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             setChanged();
             sendData();
             updateOutputPreview();
+        }
+
+        if (attempted) {
+            if (repairedAny && failedAny)
+                setStatusMessage("Partially completed");
+            else if (!repairedAny)
+                setStatusMessage("Repair all failed");
+            else
+                setStatusMessage("");
         }
 
         return repairedAny;
@@ -273,11 +303,10 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         InferredMaterial inferred = null;
         if (MRSConfigs.common().mechanicalRepairStation.tryInferMaterialFromRecipes.get())
             inferred = inferMaterialFromRecipes(target);
-        boolean inferredWoodOrStone = inferred != null && inferred.isWoodOrStone;
-
         boolean useInferred = available <= 0 && inferred != null;
         if (useInferred)
             available = countMaterials(inferred.ingredient);
+        boolean inferredWoodOrStone = useInferred && inferred.isWoodOrStone;
 
         return new MaterialInfo(available, useInferred, inferredWoodOrStone, useInferred ? inferred.ingredient : null);
     }
@@ -862,11 +891,22 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         level.playSound(null, worldPosition, SoundEvents.ENCHANTMENT_TABLE_USE, SoundSource.BLOCKS, 0.9f, 1.0f);
     }
 
+    public void armWhyNotRepairDebug(Player player, String materialSpec) {
+        debugPending = true;
+        debugRequester = player.getGameProfile().getName();
+        debugMaterialSpec = materialSpec;
+    }
+
+    public String getStatusMessage() {
+        return statusMessage == null ? "" : statusMessage;
+    }
+
     @Override
     public void write(CompoundTag compound, boolean clientPacket) {
         compound.putFloat("RotationBuffer", rotationBuffer);
         compound.putInt("FEBuffer", feBuffer);
         compound.putInt("ManaBuffer", manaBuffer);
+        compound.putString("StatusMessage", getStatusMessage());
         compound.put("Inventory", clientPacket ? inventory.serializeNBT() : serializeInventoryForSave());
         super.write(compound, clientPacket);
     }
@@ -876,9 +916,11 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         rotationBuffer = compound.getFloat("RotationBuffer");
         feBuffer = compound.getInt("FEBuffer");
         manaBuffer = compound.getInt("ManaBuffer");
+        statusMessage = compound.getString("StatusMessage");
         if (compound.contains("Inventory"))
             inventory.deserializeNBT(compound.getCompound("Inventory"));
         inventory.setStackInSlot(OUTPUT_SLOT, ItemStack.EMPTY);
+        lastTargetEmpty = inventory.getStackInSlot(TARGET_SLOT).isEmpty();
         resizeInventoryIfNeeded();
         rotationBuffer = Math.min(rotationBuffer, maxRotations());
         feBuffer = Math.min(feBuffer, maxFeBuffer());
@@ -958,6 +1000,14 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             protected void onContentsChanged(int slot) {
                 setChanged();
                 sendData();
+                if (slot == TARGET_SLOT) {
+                    boolean nowEmpty = inventory.getStackInSlot(TARGET_SLOT).isEmpty();
+                    if (nowEmpty)
+                        setStatusMessage("");
+                    if (lastTargetEmpty && !nowEmpty && debugPending)
+                        logRepairDebug();
+                    lastTargetEmpty = nowEmpty;
+                }
                 updateOutputPreview();
             }
         };
@@ -974,6 +1024,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         if (itemHandler != null)
             itemHandler.invalidate();
         itemHandler = LazyOptional.of(() -> inventory);
+        lastTargetEmpty = inventory.getStackInSlot(TARGET_SLOT).isEmpty();
         updateOutputPreview();
     }
 
@@ -1003,7 +1054,7 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
 
     private ItemStack buildRepairPreview() {
         ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
-        RepairPlan plan = planRepair(target);
+        RepairPlan plan = planRepair(target, true);
         if (plan == null || plan.totalRepair <= 0)
             return ItemStack.EMPTY;
         ItemStack preview = target.copy();
@@ -1021,8 +1072,8 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
                 && current.getCount() == preview.getCount();
     }
 
-    private ItemStack repairStack(ItemStack target) {
-        RepairPlan plan = planRepair(target);
+    private ItemStack repairStack(ItemStack target, boolean updateStatus) {
+        RepairPlan plan = planRepair(target, updateStatus);
         if (plan == null || plan.totalRepair <= 0)
             return ItemStack.EMPTY;
 
@@ -1046,28 +1097,57 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         return result;
     }
 
-    private RepairPlan planRepair(ItemStack target) {
-        if (target.isEmpty() || !target.isDamageableItem())
+    private RepairPlan planRepair(ItemStack target, boolean updateStatus) {
+        if (target.isEmpty()) {
+            if (updateStatus)
+                setStatusMessage("");
             return null;
+        }
+        if (!target.isDamageableItem()) {
+            if (updateStatus)
+                setStatusMessage("Cannot be repaired");
+            return null;
+        }
         int damage = target.getDamageValue();
-        if (damage <= 0)
+        if (damage <= 0) {
+            if (updateStatus)
+                setStatusMessage("Not damaged");
             return null;
+        }
 
         int maxRepair = damage;
         boolean enchanted = target.isEnchanted();
         int manaPerDurability = manaPerDurability();
-        if (enchanted && manaPerDurability > 0)
-            maxRepair = Math.min(maxRepair, manaBuffer / manaPerDurability);
-        if (maxRepair <= 0)
+        if (enchanted && manaPerDurability > 0) {
+            int maxByMana = manaBuffer / manaPerDurability;
+            if (maxByMana <= 0) {
+                if (updateStatus)
+                    setStatusMessage("Not enough mana");
+                return null;
+            }
+            maxRepair = Math.min(maxRepair, maxByMana);
+        }
+        if (maxRepair <= 0) {
+            if (updateStatus)
+                setStatusMessage("Not enough mana");
             return null;
+        }
 
         MaterialInfo materialInfo = getMaterialInfoForRepair(target);
         boolean freeRepair = isFreeRepairCandidate(target)
                 || isBelowFreeRepairPercent(target)
                 || materialInfo.inferredWoodOrStone;
         double durabilityPerMaterial = target.getMaxDamage() / 3.0;
-        if (!freeRepair && durabilityPerMaterial <= 0)
+        if (!freeRepair && durabilityPerMaterial <= 0) {
+            if (updateStatus)
+                setStatusMessage("Missing repair material");
             return null;
+        }
+        if (!freeRepair && materialInfo.available <= 0) {
+            if (updateStatus)
+                setStatusMessage("Not enough materials");
+            return null;
+        }
 
         int fePerDurability = fePerDurability();
         int totalRepair = 0;
@@ -1112,7 +1192,26 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
         }
 
         if (totalRepair <= 0)
+        {
+            if (updateStatus) {
+                if (!freeRepair) {
+                    int pieceDurability = (int) Math.ceil(durabilityPerMaterial);
+                    int energyDurability = (fePerDurability > 0 ? feBuffer / fePerDurability : 0) + Mth.floor(rotationBuffer);
+                    if (energyDurability < pieceDurability)
+                        setStatusMessage("Not enough energy");
+                    else
+                        setStatusMessage("Not enough materials");
+                } else {
+                    int energyDurability = (fePerDurability > 0 ? feBuffer / fePerDurability : 0) + Mth.floor(rotationBuffer);
+                    if (energyDurability <= 0)
+                        setStatusMessage("Not enough energy");
+                }
+            }
             return null;
+        }
+
+        if (updateStatus)
+            setStatusMessage("");
 
         int manaCost = enchanted && manaPerDurability > 0 ? totalRepair * manaPerDurability : 0;
 
@@ -1155,5 +1254,61 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
             this.inferredWoodOrStone = inferredWoodOrStone;
             this.ingredient = ingredient;
         }
+    }
+
+    private void setStatusMessage(String message) {
+        String next = message == null ? "" : message;
+        if (next.equals(statusMessage))
+            return;
+        statusMessage = next;
+        setChanged();
+        if (level != null && !level.isClientSide)
+            sendData();
+    }
+
+    private void logRepairDebug() {
+        debugPending = false;
+        ItemStack target = inventory.getStackInSlot(TARGET_SLOT);
+        MaterialInfo materialInfo = getMaterialInfoForRepair(target);
+        String materialDesc = materialInfo.ingredient == null ? "default" : formatIngredient(materialInfo.ingredient);
+        String optionalInfo = debugMaterialSpec == null ? "" : debugMaterialSpec;
+        int optionalCount = debugMaterialSpec == null ? 0 : countMaterials(parseDebugIngredient(debugMaterialSpec));
+        YYMechanicalRepairStation.LOGGER.info("[RepairDebug] requester={}, item={}, damage={}/{}, rot={}, fe={}, mana={}, " +
+                        "materialsAvailable={}, material={}, inferred={}, optionalMaterial={}, optionalAvailable={}",
+                debugRequester,
+                ForgeRegistries.ITEMS.getKey(target.getItem()),
+                target.getDamageValue(), target.getMaxDamage(),
+                rotationBuffer, feBuffer, manaBuffer,
+                materialInfo.available,
+                materialDesc,
+                materialInfo.useInferred,
+                optionalInfo,
+                optionalCount);
+        debugRequester = null;
+        debugMaterialSpec = null;
+    }
+
+    private static String formatIngredient(Ingredient ingredient) {
+        JsonElement json = ingredient.toJson();
+        return json.toString();
+    }
+
+    private Ingredient parseDebugIngredient(String spec) {
+        if (spec == null || spec.isEmpty())
+            return Ingredient.EMPTY;
+        String trimmed = spec.trim();
+        if (trimmed.startsWith("#")) {
+            ResourceLocation id = ResourceLocation.tryParse(trimmed.substring(1));
+            if (id == null)
+                return Ingredient.EMPTY;
+            return Ingredient.of(ItemTags.create(id));
+        }
+        ResourceLocation id = ResourceLocation.tryParse(trimmed);
+        if (id == null)
+            return Ingredient.EMPTY;
+        Item item = ForgeRegistries.ITEMS.getValue(id);
+        if (item == null)
+            return Ingredient.EMPTY;
+        return Ingredient.of(item);
     }
 }

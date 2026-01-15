@@ -30,6 +30,7 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
     private int syncedRotations;
     private int syncedFe;
     private int syncedMana;
+    private String syncedStatus = "";
 
     public MechanicalRepairStationMenu(int id, Inventory inventory, ContainerLevelAccess access,
                                        MechanicalRepairStationBlockEntity station) {
@@ -152,6 +153,16 @@ public class MechanicalRepairStationMenu extends AbstractContainerMenu {
 
     public int getSyncedMana() {
         return syncedMana;
+    }
+
+    public MechanicalRepairStationBlockEntity getStation() {
+        return station;
+    }
+
+    public String getStatusMessage() {
+        if (station != null)
+            return station.getStatusMessage();
+        return syncedStatus;
     }
 
     public ItemStack getPreviewMaterialStack() {
