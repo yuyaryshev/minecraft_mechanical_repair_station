@@ -13,6 +13,9 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
     public static final int DEFAULT_FE_PER_DURABILITY = 100;
     public static final int DEFAULT_MANA_PER_DURABILITY = 10;
     public static final int DEFAULT_MAX_MANA_EXTRACT_PER_TICK = 1000;
+    public static final boolean DEFAULT_DISABLE_MANA_USAGE = false;
+    public static final boolean DEFAULT_USE_LAVA_INSTEAD_OF_MANA = false;
+    public static final boolean DEFAULT_HIDE_FE_BAR_IF_EMPTY = true;
     public static final float DEFAULT_STRESS_IMPACT = 0.0f;
     public static final boolean DEFAULT_DEATH_BREAKS_ITEMS = true;
     public static final int DEFAULT_DEATH_DURABILITY_LOSS_PERCENT = 100;
@@ -33,6 +36,9 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
     public final ConfigInt fePerDurability;
     public final ConfigInt manaPerDurability;
     public final ConfigInt maxManaExtractPerTick;
+    public final ConfigBool disableManaUsage;
+    public final ConfigBool useLavaInsteadOfMana;
+    public final ConfigBool hideFeBarIfEmpty;
     public final ConfigFloat stressImpact;
     public final ConfigBool deathBreaksItems;
     public final ConfigInt deathDurabilityLossPercent;
@@ -47,6 +53,9 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
         fePerDurability = i(DEFAULT_FE_PER_DURABILITY, 1, 10_000, "fePerDurability", Comments.fePerDurability);
         manaPerDurability = i(DEFAULT_MANA_PER_DURABILITY, 0, 10_000, "manaPerDurability", Comments.manaPerDurability);
         maxManaExtractPerTick = i(DEFAULT_MAX_MANA_EXTRACT_PER_TICK, 1, 100_000, "maxManaExtractPerTick", Comments.maxManaExtractPerTick);
+        disableManaUsage = b(DEFAULT_DISABLE_MANA_USAGE, "disableManaUsage", Comments.disableManaUsage);
+        useLavaInsteadOfMana = b(DEFAULT_USE_LAVA_INSTEAD_OF_MANA, "useLavaInsteadOfMana", Comments.useLavaInsteadOfMana);
+        hideFeBarIfEmpty = b(DEFAULT_HIDE_FE_BAR_IF_EMPTY, "hideFeBarIfEmpty", Comments.hideFeBarIfEmpty);
         stressImpact = f(DEFAULT_STRESS_IMPACT, 0.0f, 1024.0f, "stressImpact", Comments.stressImpact);
         deathBreaksItems = b(DEFAULT_DEATH_BREAKS_ITEMS, "deathBreaksItems", Comments.deathBreaksItems);
         deathDurabilityLossPercent = i(DEFAULT_DEATH_DURABILITY_LOSS_PERCENT, 0, 100, "deathDurabilityLossPercent",
@@ -73,6 +82,9 @@ public class MRSMechanicalRepairStationConfig extends ConfigBase {
         static String fePerDurability = "FE consumed per durability repaired.";
         static String manaPerDurability = "Mana consumed per durability repaired on enchanted items.";
         static String maxManaExtractPerTick = "Maximum mana extracted per tick from nearby pools.";
+        static String disableManaUsage = "Disable Botania mana usage entirely.";
+        static String useLavaInsteadOfMana = "Use lava instead of Botania mana (requires lava sources nearby).";
+        static String hideFeBarIfEmpty = "Hide FE bar when the buffer is empty.";
         static String stressImpact = "Stress impact while charging.";
         static String deathBreaksItems = "If true, death reduces durability of equipped and hotbar items.";
         static String deathDurabilityLossPercent = "Percent of max durability lost on death (0-100).";

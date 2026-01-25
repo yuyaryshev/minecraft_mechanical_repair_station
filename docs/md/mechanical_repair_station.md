@@ -2,6 +2,11 @@
 
 Status legend: todo -> implemented -> done. Ask for testing before moving from implemented to done.
 
+## Ownership
+
+- Owner: This Codex instance maintains the Mechanical Repair Station mod and handles all related tasks.
+- MCP mod is a separate tool owned by another Codex instance; use it for testing only.
+
 ## Features
 
 | Feature | Status | Notes |

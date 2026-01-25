@@ -7,6 +7,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
+import com.yymod.mechanicalrepairstation.config.MRSConfigs;
 
 public class MechanicalRepairStationScreen extends AbstractContainerScreen<MechanicalRepairStationMenu> {
 
@@ -71,10 +72,17 @@ public class MechanicalRepairStationScreen extends AbstractContainerScreen<Mecha
         int gaugeBottom = topPos + GAUGE_Y + gaugeHeight;
         renderGauge(guiGraphics, leftPos + GAUGE_X, gaugeBottom, 6, gaugeHeight,
                 menu.getSyncedRotations(), MechanicalRepairStationBlockEntity.maxRotations(), 0xFF72C962);
-        renderGauge(guiGraphics, leftPos + GAUGE_X + 8, gaugeBottom, 6, gaugeHeight,
-                menu.getSyncedFe(), MechanicalRepairStationBlockEntity.maxFeBuffer(), 0xFF4DA3FF);
-        renderGauge(guiGraphics, leftPos + GAUGE_X + 16, gaugeBottom, 6, gaugeHeight,
-                menu.getSyncedMana(), MechanicalRepairStationBlockEntity.maxManaBuffer(), 0xFF6FCFA5);
+        int feValue = menu.getSyncedFe();
+        boolean hideFe = shouldHideFeGauge(feValue);
+        if (!hideFe) {
+            renderGauge(guiGraphics, leftPos + GAUGE_X + 8, gaugeBottom, 6, gaugeHeight,
+                    feValue, MechanicalRepairStationBlockEntity.maxFeBuffer(), 0xFF4DA3FF);
+        }
+        if (MechanicalRepairStationBlockEntity.isManaGaugeVisible()) {
+            int manaColor = MechanicalRepairStationBlockEntity.isLavaInsteadOfMana() ? 0xFFEA6A1A : 0xFF6FCFA5;
+            renderGauge(guiGraphics, leftPos + GAUGE_X + 16, gaugeBottom, 6, gaugeHeight,
+                    menu.getSyncedMana(), MechanicalRepairStationBlockEntity.maxManaBuffer(), manaColor);
+        }
     }
 
     @Override
@@ -112,5 +120,13 @@ public class MechanicalRepairStationScreen extends AbstractContainerScreen<Mecha
         if (minecraft == null || minecraft.gameMode == null)
             return;
         minecraft.gameMode.handleInventoryButtonClick(menu.containerId, id);
+    }
+
+    private boolean shouldHideFeGauge(int feValue) {
+        if (feValue > 0)
+            return false;
+        if (MRSConfigs.common() == null)
+            return false;
+        return MRSConfigs.common().mechanicalRepairStation.hideFeBarIfEmpty.get();
     }
 }

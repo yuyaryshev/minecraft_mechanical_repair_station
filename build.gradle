@@ -149,6 +149,11 @@ repositories {
         }
     }
 
+    // Local MCP mod for automated testing
+    maven {
+        url = uri("D:/b/Mine/GIT_Work/minecraft/mods_2025-12-23/minecraft_mcp_for_llm/mcmodsrepo")
+    }
+
     flatDir {
         dirs "G:/G_minecraft/minecraft/minecraft_prism_launcher_ely_by/instances/yy_modpack_1_20_forge/minecraft/mods"
     }
@@ -182,6 +187,7 @@ dependencies {
     runtimeOnly fg.deobf(group: "local", name: "Library_of_Exile", version: "1.20.1-2.1.1")
     runtimeOnly fg.deobf(group: "local", name: "The-Harvest", version: "1.20.1-1.1.0")
     runtimeOnly fg.deobf(group: "local", name: "Dungeon-Realm", version: "1.20.1-1.1.3")
+    runtimeOnly fg.deobf("com.yymod.mcpforllm:minecraft_mcp_for_llm:0.1.0-1.20.1")
 
     annotationProcessor "org.spongepowered:mixin:${mixin_version}:processor"
     testAnnotationProcessor "org.spongepowered:mixin:${mixin_version}:processor"

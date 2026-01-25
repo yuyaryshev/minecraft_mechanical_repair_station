@@ -52,16 +52,19 @@ public final class ManaPoolHelper {
     private ManaPoolHelper() {
     }
 
-    public static int extractMana(Level level, BlockPos origin, int radius, int maxPerTick, int maxNeeded) {
+    public static int extractMana(Level level, BlockPos origin, int radius, int maxPerTick, int maxNeeded, boolean useLava) {
         int extracted = 0;
         int remaining = Math.max(0, maxNeeded);
         if (remaining <= 0)
             return 0;
-        extracted += extractFromPools(level, origin, radius, maxPerTick, remaining);
-        remaining = Math.max(0, maxNeeded - extracted);
-        if (remaining <= 0)
-            return extracted;
-        extracted += extractFromFluids(level, origin, radius, maxPerTick - extracted, remaining);
+        if (!useLava) {
+            extracted += extractFromPools(level, origin, radius, maxPerTick, remaining);
+            remaining = Math.max(0, maxNeeded - extracted);
+            if (remaining <= 0)
+                return extracted;
+        }
+        Fluid targetFluid = useLava ? Fluids.LAVA : MANA_FLUID;
+        extracted += extractFromFluids(level, origin, radius, maxPerTick - extracted, remaining, targetFluid);
         return extracted;
     }
 
@@ -102,12 +105,11 @@ public final class ManaPoolHelper {
         return extracted;
     }
 
-    private static int extractFromFluids(Level level, BlockPos origin, int radius, int maxPerTick, int maxNeeded) {
+    private static int extractFromFluids(Level level, BlockPos origin, int radius, int maxPerTick, int maxNeeded, Fluid targetFluid) {
         int toExtract = Math.min(maxPerTick, maxNeeded);
         if (toExtract <= 0)
             return 0;
 
-        Fluid targetFluid = MANA_FLUID;
         if (targetFluid == null || targetFluid == Fluids.EMPTY)
             return 0;
 
@@ -153,8 +155,8 @@ public final class ManaPoolHelper {
 
     private static Fluid resolveManaFluid() {
         Fluid mana = ForgeRegistries.FLUIDS.getValue(MANA_FLUID_ID);
-        if (mana == null || mana == Fluids.EMPTY)
-            return Fluids.LAVA;
+        if (mana == null)
+            return Fluids.EMPTY;
         return mana;
     }
 }

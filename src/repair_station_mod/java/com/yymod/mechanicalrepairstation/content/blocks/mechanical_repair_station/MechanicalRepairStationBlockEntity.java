@@ -36,6 +36,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.energy.IEnergyStorage;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.items.ItemStackHandler;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -836,12 +837,17 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     private void pullManaFromNearbyPools() {
         if (level == null || level.isClientSide)
             return;
+        if (isManaUsageDisabled())
+            return;
+        if (!useLavaInsteadOfMana() && !isBotaniaLoaded())
+            return;
         int maxManaBuffer = maxManaBuffer();
         if (manaBuffer >= maxManaBuffer)
             return;
         int remainingBuffer = Math.max(0, maxManaBuffer - manaBuffer);
         int maxExtract = maxManaExtractPerTick();
-        int extracted = ManaPoolHelper.extractMana(level, worldPosition, MANA_SEARCH_RADIUS, maxExtract, remainingBuffer);
+        int extracted = ManaPoolHelper.extractMana(level, worldPosition, MANA_SEARCH_RADIUS, maxExtract, remainingBuffer,
+                useLavaInsteadOfMana());
         if (extracted > 0) {
             manaBuffer = Math.min(maxManaBuffer, manaBuffer + extracted);
             setChanged();
@@ -944,6 +950,10 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     public static int maxManaBuffer() {
         if (MRSConfigs.common() == null)
             return MRSMechanicalRepairStationConfig.DEFAULT_MANA_BUFFER;
+        if (isManaUsageDisabled())
+            return 0;
+        if (!useLavaInsteadOfMana() && !isBotaniaLoaded())
+            return 0;
         return Math.max(0, MRSConfigs.common().mechanicalRepairStation.manaBuffer.get());
     }
 
@@ -956,13 +966,49 @@ public class MechanicalRepairStationBlockEntity extends KineticBlockEntity imple
     public static int manaPerDurability() {
         if (MRSConfigs.common() == null)
             return MRSMechanicalRepairStationConfig.DEFAULT_MANA_PER_DURABILITY;
+        if (isManaUsageDisabled())
+            return 0;
+        if (!useLavaInsteadOfMana() && !isBotaniaLoaded())
+            return 0;
         return Math.max(0, MRSConfigs.common().mechanicalRepairStation.manaPerDurability.get());
     }
 
     public static int maxManaExtractPerTick() {
         if (MRSConfigs.common() == null)
             return MRSMechanicalRepairStationConfig.DEFAULT_MAX_MANA_EXTRACT_PER_TICK;
+        if (isManaUsageDisabled())
+            return 0;
+        if (!useLavaInsteadOfMana() && !isBotaniaLoaded())
+            return 0;
         return Math.max(1, MRSConfigs.common().mechanicalRepairStation.maxManaExtractPerTick.get());
+    }
+
+    public static boolean isManaGaugeVisible() {
+        if (isManaUsageDisabled())
+            return false;
+        if (useLavaInsteadOfMana())
+            return true;
+        return isBotaniaLoaded();
+    }
+
+    public static boolean isLavaInsteadOfMana() {
+        return useLavaInsteadOfMana();
+    }
+
+    private static boolean isBotaniaLoaded() {
+        return ModList.get().isLoaded("botania");
+    }
+
+    private static boolean isManaUsageDisabled() {
+        if (MRSConfigs.common() == null)
+            return false;
+        return MRSConfigs.common().mechanicalRepairStation.disableManaUsage.get();
+    }
+
+    private static boolean useLavaInsteadOfMana() {
+        if (MRSConfigs.common() == null)
+            return false;
+        return MRSConfigs.common().mechanicalRepairStation.useLavaInsteadOfMana.get();
     }
 
     @Override
