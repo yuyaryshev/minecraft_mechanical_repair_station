@@ -6,7 +6,7 @@ Status legend: todo -> implemented -> done. Ask for testing before moving from i
 
 - Owner: This Codex instance maintains the Mechanical Repair Station mod and handles all related tasks.
 - MCP mod is a separate tool owned by another Codex instance; use it for testing only.
-- Build note: after each build, copy the latest jar to `D:\b\Mine\GIT_Work\minecraft\mod_builds` (overwrite).
+- Build note: after each build, copy the latest jar to `D:\b\Mine\GIT_Work\minecraft\mod_builds` (overwrite), and rename to `yy_mechanical_repair_station-<mc_version>-<mod_version>.jar` (mc version first).
 
 ## Features
 
